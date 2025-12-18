@@ -28,17 +28,13 @@ function loadReturns_() {
     throttle_('returns');
 
     const url = `${BASE_URL}?is_archive=false&limit=${LIMIT}&offset=${offset}`;
-    const resp = UrlFetchApp.fetch(url, {
-      method: 'get',
-      headers: { Authorization: getTokenCached_(TOKEN_KEYS.RETURNS) },
-      muteHttpExceptions: true
-    });
-
-    if (resp.getResponseCode() !== 200) {
-      throw new Error('WB Returns API error: ' + resp.getContentText());
+    let data;
+    try {
+      data = fetchJsonWithRetry_(url, getTokenCached_(TOKEN_KEYS.RETURNS));
+    } catch (e) {
+      throw new Error('WB Returns API error: ' + (e && e.message ? e.message : e));
     }
 
-    const data = JSON.parse(resp.getContentText());
     const claims = data.claims || [];
     total = data.total || 0;
     if (!claims.length) break;
@@ -98,6 +94,7 @@ function loadReturns_() {
 }
 
 
+
 /**********************
  * meta-only
  **********************/
@@ -113,15 +110,13 @@ function fetchClaimsMeta_() {
     throttle_('returns');
 
     const url = `${BASE_URL}?is_archive=false&limit=${LIMIT}&offset=${offset}`;
-    const resp = UrlFetchApp.fetch(url, {
-      method: 'get',
-      headers: { Authorization: getTokenCached_(TOKEN_KEYS.RETURNS) },
-      muteHttpExceptions: true
-    });
+    let data;
+    try {
+      data = fetchJsonWithRetry_(url, getTokenCached_(TOKEN_KEYS.RETURNS));
+    } catch (e) {
+      throw new Error('WB Returns API error (meta): ' + (e && e.message ? e.message : e));
+    }
 
-    if (resp.getResponseCode() !== 200) break;
-
-    const data = JSON.parse(resp.getContentText());
     const claims = data.claims || [];
     total = data.total || 0;
     if (!claims.length) break;
@@ -142,3 +137,4 @@ function fetchClaimsMeta_() {
 
   return claimsMeta;
 }
+

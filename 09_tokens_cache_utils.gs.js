@@ -34,6 +34,74 @@ function resetAllCache_(silent) {
 }
 
 /**********************
+ * SCRIPT PROPERTIES CACHE (TTL)
+ **********************/
+const PROP_CACHE_TS_SUFFIX = ':ts';
+const PROP_CACHE_MISS = '__MISS__';
+const PROP_CACHE_NA = 'NA';
+
+function _propCacheGetFromAll_(allProps, key, ttlMs, nowMs, missingTsIsFresh) {
+  if (!allProps || !Object.prototype.hasOwnProperty.call(allProps, key)) {
+    return { exists: false, fresh: false, value: null, needsTouch: false };
+  }
+
+  const value = allProps[key];
+  const tsKey = key + PROP_CACHE_TS_SUFFIX;
+  const tsRaw = allProps[tsKey];
+
+  if (!tsRaw) {
+    if (missingTsIsFresh) {
+      return { exists: true, fresh: true, value: value, needsTouch: true };
+    }
+    return { exists: true, fresh: false, value: value, needsTouch: false };
+  }
+
+  const ts = Number(tsRaw);
+  if (!isFinite(ts) || ts <= 0) {
+    if (missingTsIsFresh) {
+      return { exists: true, fresh: true, value: value, needsTouch: true };
+    }
+    return { exists: true, fresh: false, value: value, needsTouch: false };
+  }
+
+  const age = (nowMs || Date.now()) - ts;
+  const fresh = (!ttlMs || ttlMs <= 0) ? true : (age <= ttlMs);
+  return { exists: true, fresh: fresh, value: value, needsTouch: false };
+}
+
+function propCacheGetFromAll_(allProps, key, ttlMs, nowMs) {
+  return _propCacheGetFromAll_(allProps, key, ttlMs, nowMs, true);
+}
+
+function propCacheGetFromAllStrictTs_(allProps, key, ttlMs, nowMs) {
+  return _propCacheGetFromAll_(allProps, key, ttlMs, nowMs, false);
+}
+
+function propCacheSet_(props, key, value, nowMs) {
+  props.setProperty(key, String(value));
+  props.setProperty(key + PROP_CACHE_TS_SUFFIX, String(nowMs || Date.now()));
+}
+
+function propCacheTouchTs_(props, keys, nowMs) {
+  if (!keys || !keys.length) return;
+  const ts = String(nowMs || Date.now());
+  const uniq = {};
+  keys.forEach(k => { uniq[k] = true; });
+  Object.keys(uniq).forEach(k => {
+    try { props.setProperty(k + PROP_CACHE_TS_SUFFIX, ts); } catch (e) {}
+  });
+}
+
+function toastActive_(msg, sec) {
+  try { toast_(SpreadsheetApp.getActive(), msg, sec || 6); } catch (e) {}
+}
+
+function log_(msg) {
+  try { Logger.log(String(msg || '')); } catch (e) {}
+}
+
+
+/**********************
  * Lock + Toast helpers
  **********************/
 function withLock_(fn) {
