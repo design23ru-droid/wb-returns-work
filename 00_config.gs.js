@@ -102,33 +102,40 @@ const RUNTIME = {
 const HEADERS_MAIN = [
   'Дата создания',   // A
   'Бренд',           // B
-  'ID заявки',       // C
-  'NM ID',           // D
-  'Оценка',          // E
-  'Кол-во',          // F
-  'Возврат',         // G
-  'Отзыв',           // H
-  'Покупка (дней)',  // I
-  'Гарантия',        // J
-  'Дедлайн',         // K
+  'NM ID',           // C
+  'Оценка',          // D
+  'Кол-во',          // E
+  'Возврат',         // F
+  'Отзыв',           // G
+  'Покупка (дней)',  // H
+  'Гарантия',        // I
+  'Дедлайн',         // J
+  'ID заявки',       // K  ✅ перенесли после дедлайна
   'Решение',         // L
   'Сообщение',       // M
   '_foreignBrand'    // N
 ];
 
+function _colIndex_(headerName) {
+  const i = HEADERS_MAIN.indexOf(headerName);
+  if (i === -1) throw new Error('HEADERS_MAIN: не найден заголовок: ' + headerName);
+  return i + 1; // 1-based
+}
+
+// ✅ COL всегда синхронизирован с HEADERS_MAIN (перестановки больше не ломают форматирование)
 const COL = {
-  DT: 1,
-  BRAND: 2,
-  CLAIM_ID: 3,
-  NM_ID: 4,
-  RATING: 5,
-  RATING_COUNT: 6,
-  RETURN_RULE: 7,
-  RETURN_FB: 8,
-  PURCHASE_DAYS: 9,
-  WARRANTY: 10,
-  DEADLINE: 11,
-  DECISION: 12,
-  MESSAGE: 13,
-  FOREIGN_BRAND: 14
+  DT:            _colIndex_('Дата создания'),
+  BRAND:         _colIndex_('Бренд'),
+  NM_ID:         _colIndex_('NM ID'),
+  RATING:        _colIndex_('Оценка'),
+  RATING_COUNT:  _colIndex_('Кол-во'),
+  RETURN_RULE:   _colIndex_('Возврат'),
+  RETURN_FB:     _colIndex_('Отзыв'),
+  PURCHASE_DAYS: _colIndex_('Покупка (дней)'),
+  WARRANTY:      _colIndex_('Гарантия'),
+  DEADLINE:      _colIndex_('Дедлайн'),
+  CLAIM_ID:      _colIndex_('ID заявки'),
+  DECISION:      _colIndex_('Решение'),
+  MESSAGE:       _colIndex_('Сообщение'),
+  FOREIGN_BRAND: _colIndex_('_foreignBrand')
 };

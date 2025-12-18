@@ -146,15 +146,48 @@ function normalizeReturnRule_(text) {
 /**********************
  * HTTP helpers (retry)
  **********************/
+
+function isTransientFetchError_(e) {
+  const msg = String((e && e.message) ? e.message : e || '');
+  // GAS может локализовать сообщение
+  if (/Address unavailable/i.test(msg)) return true;
+  if (/Адрес недоступен/i.test(msg)) return true;
+
+  // частые сетевые/транспортные фейлы
+  if (/timed out/i.test(msg)) return true;
+  if (/Timeout/i.test(msg)) return true;
+  if (/DNS/i.test(msg)) return true;
+  if (/Socket/i.test(msg)) return true;
+  if (/Service invoked too many times/i.test(msg)) return false; // квоты — не ретраим
+
+  return false;
+}
+
+function sleepJitter_(ms) {
+  const wait = Math.max(0, Math.round(ms * (0.85 + Math.random() * 0.3)));
+  Utilities.sleep(wait);
+}
+
 function fetchJsonWithRetry_(url, token) {
   let delayMs = 600;
 
   for (let i = 0; i < 10; i++) {
-    const resp = UrlFetchApp.fetch(url, {
-      method: 'get',
-      headers: { Authorization: token },
-      muteHttpExceptions: true
-    });
+    let resp;
+
+    try {
+      resp = UrlFetchApp.fetch(url, {
+        method: 'get',
+        headers: { Authorization: token },
+        muteHttpExceptions: true
+      });
+    } catch (e) {
+      if (isTransientFetchError_(e)) {
+        sleepJitter_(delayMs);
+        delayMs = Math.min(15000, Math.round(delayMs * 1.8));
+        continue;
+      }
+      throw new Error('WB API fetch failed: ' + e + '\nURL: ' + url);
+    }
 
     const code = resp.getResponseCode();
     const text = resp.getContentText();
@@ -171,8 +204,7 @@ function fetchJsonWithRetry_(url, token) {
         if (!isNaN(sec) && sec > 0) wait = Math.max(wait, sec * 1000);
       }
 
-      wait = Math.round(wait * (0.85 + Math.random() * 0.3));
-      Utilities.sleep(wait);
+      sleepJitter_(wait);
       delayMs = Math.min(15000, Math.round(delayMs * 1.8));
       continue;
     }
@@ -180,22 +212,36 @@ function fetchJsonWithRetry_(url, token) {
     throw new Error('WB API error ' + code + ': ' + text);
   }
 
-  throw new Error('Retry limit exceeded (too many 429/5xx)');
+  throw new Error(
+    'WB API: превышен лимит ретраев (в т.ч. Address unavailable).\n' +
+    'Если ошибка повторяется — часто это блокировка IP Google на стороне сервиса.'
+  );
 }
 
 function fetchJsonPostWithRetryNonThrow_(url, token, payloadObj) {
   let delayMs = 700;
 
   for (let i = 0; i < 10; i++) {
-    const resp = UrlFetchApp.fetch(url, {
-      method: 'post',
-      headers: {
-        Authorization: token,
-        'Content-Type': 'application/json'
-      },
-      payload: JSON.stringify(payloadObj),
-      muteHttpExceptions: true
-    });
+    let resp;
+
+    try {
+      resp = UrlFetchApp.fetch(url, {
+        method: 'post',
+        headers: {
+          Authorization: token,
+          'Content-Type': 'application/json'
+        },
+        payload: JSON.stringify(payloadObj),
+        muteHttpExceptions: true
+      });
+    } catch (e) {
+      if (isTransientFetchError_(e)) {
+        sleepJitter_(delayMs);
+        delayMs = Math.min(20000, Math.round(delayMs * 1.8));
+        continue;
+      }
+      return null;
+    }
 
     const code = resp.getResponseCode();
 
@@ -213,8 +259,7 @@ function fetchJsonPostWithRetryNonThrow_(url, token, payloadObj) {
         if (!isNaN(sec) && sec > 0) wait = Math.max(wait, sec * 1000);
       }
 
-      wait = Math.round(wait * (0.85 + Math.random() * 0.3));
-      Utilities.sleep(wait);
+      sleepJitter_(wait);
       delayMs = Math.min(20000, Math.round(delayMs * 1.8));
       continue;
     }
@@ -224,3 +269,4 @@ function fetchJsonPostWithRetryNonThrow_(url, token, payloadObj) {
 
   return null;
 }
+

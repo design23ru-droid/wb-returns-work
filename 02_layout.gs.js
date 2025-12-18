@@ -154,3 +154,56 @@ function autoSortByDate_(sheet) {
   const range = sheet.getRange(2, 1, lastRow - 1, HEADERS_MAIN.length);
   range.sort({ column: COL.DT, ascending: true });
 }
+
+/**********************
+ * МИГРАЦИЯ СХЕМЫ (осознанно, вручную)
+ **********************/
+function migrateSchemaToCurrentHeaders_() {
+  withLock_(() => {
+    const ss = SpreadsheetApp.getActive();
+    const ui = SpreadsheetApp.getUi();
+
+    const sh = ss.getSheetByName(SHEET_NAME);
+    if (!sh) {
+      ui.alert('Лист "' + SHEET_NAME + '" не найден.');
+      return;
+    }
+
+    const answer = ui.alert(
+      'Миграция структуры',
+      'Будет применена НОВАЯ структура колонок.\n' +
+      'Данные будут перенесены по заголовкам.\n\n' +
+      'Рекомендуется сделать копию таблицы.\n\n' +
+      'Продолжить?',
+      ui.ButtonSet.OK_CANCEL
+    );
+    if (answer !== ui.Button.OK) return;
+
+    // --- бэкап листа (страховка) ---
+    const backupName =
+      SHEET_NAME + ' · backup ' +
+      Utilities.formatDate(new Date(), ss.getSpreadsheetTimeZone(), 'yyyy-MM-dd HH:mm');
+    sh.copyTo(ss).setName(backupName);
+
+    toast_(ss, 'WB · MIGRATE: пересборка структуры…', 5);
+
+    const lastCol = sh.getLastColumn();
+    rebuildSheetByHeaders_(sh, lastCol);
+
+    // финальная нормализация
+    ensureSheetLayout_(sh, { allowRebuild: false });
+
+    SpreadsheetApp.flush();
+    clearToast_(ss);
+
+    // ✅ FIX: правильная сигнатура alert
+    ui.alert(
+      'Миграция завершена',
+      'Структура обновлена.\n' +
+      'Данные сохранены.\n\n' +
+      'Резервная копия листа создана:\n' +
+      backupName,
+      ui.ButtonSet.OK
+    );
+  });
+}
