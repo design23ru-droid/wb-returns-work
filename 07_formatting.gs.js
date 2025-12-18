@@ -33,7 +33,7 @@ function applyConditionalRules_(sheet) {
       .build()
   );
 
-  // 3) 14 дней истекли (там 14.0001)
+  // 3) 14 дней истекли (число хранится фактическое; подсветка по >14)
   rules.push(
     SpreadsheetApp.newConditionalFormatRule()
       .whenNumberGreaterThan(14)

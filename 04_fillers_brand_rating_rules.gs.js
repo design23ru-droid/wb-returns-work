@@ -4,6 +4,8 @@
 function fillBrands_(sheet) {
   const props = PropertiesService.getScriptProperties();
   const allProps = props.getProperties();
+  const nowMs = Date.now();
+  const touchTs = [];
 
   const dataLastRow = getDataLastRow_(sheet);
   if (dataLastRow < 2) return;
@@ -24,7 +26,11 @@ function fillBrands_(sheet) {
     if (current && current !== 'Без бренда') continue;
 
     const cacheKey = `brand:${nmId}`;
-    if (allProps[cacheKey]) continue;
+    const cached = propCacheGetFromAll_(allProps, cacheKey, CACHE_TTL.BRAND_MS, nowMs);
+    if (cached.exists && cached.fresh) {
+      if (cached.needsTouch) touchTs.push(cacheKey);
+      continue;
+    }
 
     if (!needSet.has(nmId)) {
       needSet.add(nmId);
@@ -36,8 +42,11 @@ function fillBrands_(sheet) {
     const nmId = need[i];
     const mini = getCardMiniByNmId_(nmId);
     const brand = (mini && String(mini.brand || '').trim()) ? String(mini.brand).trim() : 'Без бренда';
-    props.setProperty(`brand:${nmId}`, brand);
+    propCacheSet_(props, `brand:${nmId}`, brand, nowMs);
   }
+
+  // миграция старого кэша (без ts): считаем «свежим», но проставляем ts
+  try { propCacheTouchTs_(props, touchTs, nowMs); } catch (e) {}
 
   const out = new Array(rows);
   const allAfter = props.getProperties();
@@ -49,19 +58,27 @@ function fillBrands_(sheet) {
     if (!nmId) { out[i] = [current || '']; continue; }
     if (current && current !== 'Без бренда') { out[i] = [current]; continue; }
 
-    const cached = allAfter[`brand:${nmId}`];
-    out[i] = [cached || current || ''];
+    const ck = `brand:${nmId}`;
+    const cached = propCacheGetFromAll_(allAfter, ck, CACHE_TTL.BRAND_MS, nowMs);
+    if (cached.needsTouch) touchTs.push(ck);
+    out[i] = [(cached.fresh ? cached.value : '') || current || ''];
   }
+
+  try { propCacheTouchTs_(props, touchTs, nowMs); } catch (e) {}
 
   sheet.getRange(2, COL.BRAND, rows, 1).setValues(out);
 }
+
 
 /**********************
  * N = TRUE если бренда нет в листе "Бренды" (A)
  **********************/
 function fillForeignBrandFlags_(sheet) {
   const brandsSheet = SpreadsheetApp.getActive().getSheetByName(BRANDS_SHEET_NAME);
-  if (!brandsSheet) throw new Error('Лист "Бренды" не найден');
+  if (!brandsSheet) {
+    toastActive_('Лист "Бренды" не найден — пропускаю проверку чужих брендов.', 6);
+    return;
+  }
 
   const last = brandsSheet.getLastRow();
   const list = (last >= 1) ? brandsSheet.getRange(1, 1, last, 1).getValues().flat() : [];
@@ -82,6 +99,7 @@ function fillForeignBrandFlags_(sheet) {
   sheet.getRange(2, COL.FOREIGN_BRAND, rows, 1).setValues(out);
   try { sheet.hideColumns(COL.FOREIGN_BRAND); } catch (e) {}
 }
+
 
 /**********************
  * 2) РЕЙТИНГИ
@@ -155,9 +173,14 @@ function loadRatings_(sheet) {
 function fillReturnConditions_(sheet) {
   const props = PropertiesService.getScriptProperties();
   const cached = props.getProperties();
+  const nowMs = Date.now();
+  const touchTs = [];
 
   const catSheet = SpreadsheetApp.getActive().getSheetByName(CATEGORIES_SHEET_NAME);
-  if (!catSheet) throw new Error('Лист "Категории" не найден');
+  if (!catSheet) {
+    toastActive_('Лист "Категории" не найден — пропускаю заполнение "Возврат".', 6);
+    return;
+  }
 
   const catLastRow = catSheet.getLastRow();
   const categoryMap = new Map();
@@ -184,8 +207,10 @@ function fillReturnConditions_(sheet) {
     if (curG[i]) continue;
 
     const cacheKey = `rule:${nmId}`;
-    const cachedValue = cached[cacheKey];
-    if (cachedValue === 'Заявка' || cachedValue === '14 дней') continue;
+    const r = propCacheGetFromAll_(cached, cacheKey, CACHE_TTL.RULE_MS, nowMs);
+    if (r.needsTouch) touchTs.push(cacheKey);
+    const cachedValue = (r.exists && r.fresh) ? String(r.value || '') : '';
+    if (cachedValue === 'Заявка' || cachedValue === '14 дней' || cachedValue === PROP_CACHE_NA) continue;
 
     if (!needSet.has(nmId)) {
       needSet.add(nmId);
@@ -200,10 +225,12 @@ function fillReturnConditions_(sheet) {
     const fullRule = categoryMap.get(category) || '';
     const shortRule = normalizeReturnRule_(fullRule);
 
-    if (shortRule === 'Заявка' || shortRule === '14 дней') {
-      props.setProperty(`rule:${nmId}`, shortRule);
-    }
+    // кэшируем и "не найдено" (NA) с TTL, чтобы не дергать Content API на каждом прогоне
+    const toStore = (shortRule === 'Заявка' || shortRule === '14 дней') ? shortRule : PROP_CACHE_NA;
+    propCacheSet_(props, `rule:${nmId}`, toStore, nowMs);
   }
+
+  try { propCacheTouchTs_(props, touchTs, nowMs); } catch (e) {}
 
   const cachedAfter = props.getProperties();
   const out = new Array(rows);
@@ -215,8 +242,15 @@ function fillReturnConditions_(sheet) {
     if (current) { out[i] = [current]; continue; }
     if (!nmId) { out[i] = ['']; continue; }
 
-    out[i] = [cachedAfter[`rule:${nmId}`] || ''];
+    const ck = `rule:${nmId}`;
+    const r = propCacheGetFromAll_(cachedAfter, ck, CACHE_TTL.RULE_MS, nowMs);
+    if (r.needsTouch) touchTs.push(ck);
+    const v = (r.exists && r.fresh) ? String(r.value || '') : '';
+    out[i] = [(v === PROP_CACHE_NA) ? '' : v];
   }
+
+  try { propCacheTouchTs_(props, touchTs, nowMs); } catch (e) {}
 
   sheet.getRange(2, COL.RETURN_RULE, rows, 1).setValues(out);
 }
+

@@ -32,7 +32,11 @@ function fetchFeedbacksForNmIdWindow_(nmId, fromDate, toDate) {
 
       if (list.length < take) break;
       skip += list.length;
-      if (skip > 50000) break;
+
+      if (skip > 50000) {
+        log_(`Feedbacks API: достигнут лимит пагинации skip=${skip} (nmId=${nmId}, dateFrom=${dateFrom}, dateTo=${dateTo})`);
+        break;
+      }
     }
   });
 
@@ -47,7 +51,10 @@ function getRatingStatsForNmId_(nmId) {
     let skip = 0;
 
     while (true) {
-      if (skip > 199990) break;
+      if (skip > 199990) {
+        log_(`Feedbacks API (rating): достигнут лимит пагинации skip=${skip} (nmId=${nmId})`);
+        break;
+      }
 
       throttle_('feedbacks');
 
@@ -75,6 +82,7 @@ function getRatingStatsForNmId_(nmId) {
   if (!count) return { avg: '', count: 0 };
   return { avg: Math.round(sum / count * 10) / 10, count };
 }
+
 
 /**********************
  * CONTENT API helpers

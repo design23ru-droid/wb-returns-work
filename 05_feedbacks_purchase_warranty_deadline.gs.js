@@ -4,6 +4,8 @@
 function fillReturnFeedbacks_(sheet, claimsMeta) {
   const props = PropertiesService.getScriptProperties();
   const cache = props.getProperties();
+  const nowMs = Date.now();
+  const touchTs = [];
 
   const dataLastRow = getDataLastRow_(sheet);
   if (dataLastRow < 2) return;
@@ -14,14 +16,36 @@ function fillReturnFeedbacks_(sheet, claimsMeta) {
   const curH = sheet.getRange(2, COL.RETURN_FB, rows, 1).getDisplayValues().flat().map(x => String(x || '').trim());
 
   const group = new Map();
+  const out = new Array(rows);
 
+  // 1) Сначала пробуем кэш (с TTL). Если нет/протух — ставим задачу на поиск.
   for (let i = 0; i < rows; i++) {
     const claimId = claimIds[i];
     const current = curH[i];
-    if (!claimId || current) continue;
+
+    if (current) { out[i] = [current]; continue; }
+    if (!claimId) { out[i] = ['']; continue; }
 
     const cacheKey = `claimfb:${claimId}`;
-    if (cache.hasOwnProperty(cacheKey)) continue;
+
+    if (Object.prototype.hasOwnProperty.call(cache, cacheKey)) {
+      const raw = String(cache[cacheKey] || '');
+      const isFound = raw.indexOf('⭐') === 0;
+
+      const ttl = isFound ? CACHE_TTL.CLAIMFB_FOUND_MS : CACHE_TTL.CLAIMFB_MISS_MS;
+      const r = isFound
+        ? propCacheGetFromAll_(cache, cacheKey, ttl, nowMs)
+        : propCacheGetFromAllStrictTs_(cache, cacheKey, ttl, nowMs);
+
+      if (r.exists && r.fresh) {
+        if (r.needsTouch) touchTs.push(cacheKey);
+        const v = String(r.value || '');
+        out[i] = [(v === PROP_CACHE_MISS || v === PROP_CACHE_NA) ? '' : v];
+        continue;
+      }
+    }
+
+    out[i] = [''];
 
     const meta = claimsMeta && claimsMeta[claimId];
     if (!meta || !meta.nm_id || !meta.order_dt || !meta.dt) continue;
@@ -35,41 +59,61 @@ function fillReturnFeedbacks_(sheet, claimsMeta) {
     group.get(nmId).push({ rowIndex: i, claimId, orderDt, claimDt });
   }
 
-  const out = new Array(rows);
-  for (let i = 0; i < rows; i++) {
-    const claimId = claimIds[i];
-    const current = curH[i];
+  // миграция старого кэша (⭐N без ts)
+  try { propCacheTouchTs_(props, touchTs, nowMs); } catch (e) {}
 
-    if (current) { out[i] = [current]; continue; }
-
-    const cacheKey = `claimfb:${claimId}`;
-    if (claimId && cache.hasOwnProperty(cacheKey)) { out[i] = [cache[cacheKey]]; continue; }
-
-    out[i] = [''];
-  }
-
-  const STRICT_MINUTES = 120;
+  const DAY_MS = 24 * 3600 * 1000;
 
   for (const [nmId, items] of group.entries()) {
-    let minFrom = new Date(items[0].orderDt.getTime() - 24 * 3600 * 1000);
-    let maxTo   = new Date(items[0].claimDt.getTime() + 24 * 3600 * 1000);
+    let minFrom = new Date(items[0].orderDt.getTime() - FEEDBACK_WINDOW_DAYS_BEFORE_ORDER * DAY_MS);
+    let maxToStrict = new Date(items[0].claimDt.getTime() + FEEDBACK_WINDOW_DAYS_AFTER_CLAIM_STRICT * DAY_MS);
+    let maxToFallback = new Date(items[0].claimDt.getTime() + FEEDBACK_WINDOW_DAYS_AFTER_CLAIM_FALLBACK * DAY_MS);
 
     items.forEach(it => {
-      const from = new Date(it.orderDt.getTime() - 24 * 3600 * 1000);
-      const to   = new Date(it.claimDt.getTime() + 24 * 3600 * 1000);
+      const from = new Date(it.orderDt.getTime() - FEEDBACK_WINDOW_DAYS_BEFORE_ORDER * DAY_MS);
+      const toStrict = new Date(it.claimDt.getTime() + FEEDBACK_WINDOW_DAYS_AFTER_CLAIM_STRICT * DAY_MS);
+      const toFallback = new Date(it.claimDt.getTime() + FEEDBACK_WINDOW_DAYS_AFTER_CLAIM_FALLBACK * DAY_MS);
       if (from < minFrom) minFrom = from;
-      if (to > maxTo) maxTo = to;
+      if (toStrict > maxToStrict) maxToStrict = toStrict;
+      if (toFallback > maxToFallback) maxToFallback = toFallback;
     });
 
-    const feedbacks = fetchFeedbacksForNmIdWindow_(nmId, minFrom, maxTo);
-    const idx = buildFeedbackIndex_(feedbacks);
+    // 2) Строгий поиск
+    const fbStrict = fetchFeedbacksForNmIdWindow_(nmId, minFrom, maxToStrict);
+    const idxStrict = buildFeedbackIndex_(fbStrict);
+
+    const unresolved = [];
 
     items.forEach(it => {
-      const stars = pickClosestStars_(idx, it.orderDt.getTime(), STRICT_MINUTES);
+      const stars = pickClosestStars_(idxStrict, it.orderDt.getTime(), FEEDBACK_STRICT_MINUTES);
       const val = (stars >= 1 && stars <= 5) ? `⭐${stars}` : '';
-      props.setProperty(`claimfb:${it.claimId}`, val);
-      out[it.rowIndex][0] = val;
+      if (val) {
+        propCacheSet_(props, `claimfb:${it.claimId}`, val, nowMs);
+        out[it.rowIndex][0] = val;
+      } else {
+        unresolved.push(it);
+      }
     });
+
+    // 3) Fallback (только если не нашли в строгом)
+    if (unresolved.length) {
+      const idxWide = (maxToFallback.getTime() <= maxToStrict.getTime())
+        ? idxStrict
+        : buildFeedbackIndex_(fetchFeedbacksForNmIdWindow_(nmId, minFrom, maxToFallback));
+
+      unresolved.forEach(it => {
+        const stars = pickClosestStars_(idxWide, it.orderDt.getTime(), FEEDBACK_FALLBACK_MINUTES);
+        const val = (stars >= 1 && stars <= 5) ? `⭐${stars}` : '';
+        if (val) {
+          propCacheSet_(props, `claimfb:${it.claimId}`, val, nowMs);
+          out[it.rowIndex][0] = val;
+        } else {
+          // MISS кэшируем ненадолго, чтобы отзыв мог подтянуться в следующий прогон
+          propCacheSet_(props, `claimfb:${it.claimId}`, PROP_CACHE_MISS, nowMs);
+          out[it.rowIndex][0] = '';
+        }
+      });
+    }
   }
 
   sheet.getRange(2, COL.RETURN_FB, rows, 1).setValues(out);
@@ -118,6 +162,7 @@ function pickClosestStars_(idxArr, targetMs, strictMinutes) {
   return (bestDiff <= strictMinutes * 60000) ? bestVal : NaN;
 }
 
+
 /**********************
  * 🛒 ПОКУПКА (дней) — I
  **********************/
@@ -161,13 +206,15 @@ function fillPurchaseDays_(sheet, claimsMeta) {
     const diffDays = Math.floor((claim0.getTime() - order0.getTime()) / DAY_MS);
     if (!isFinite(diffDays) || diffDays < 0) { out[i] = ['']; continue; }
 
-    if (diffDays <= 14) out[i] = [diffDays];
-    else out[i] = [14.0001]; // видно 14, но условие >14 сработает
+    // сохраняем фактическое число дней (не обрезаем до 14),
+    // а подсветку >14 делаем правилом условного форматирования
+    out[i] = [diffDays];
   }
 
   sheet.getRange(2, COL.PURCHASE_DAYS, rows, 1).setValues(out);
   try { sheet.getRange(2, COL.PURCHASE_DAYS, rows, 1).setNumberFormat('0'); } catch (e) {}
 }
+
 
 /**********************
  * 🛡 ГАРАНТИЯ — J
@@ -180,6 +227,8 @@ function fillWarrantyStatus_(sheet, claimsMeta) {
 
   const props = PropertiesService.getScriptProperties();
   const cached = props.getProperties();
+  const nowMs = Date.now();
+  const touchTs = [];
 
   const claimIds = sheet.getRange(2, COL.CLAIM_ID, rows, 1).getValues().flat().map(v => String(v || '').trim());
   const curW = sheet.getRange(2, COL.WARRANTY, rows, 1).getDisplayValues().flat().map(v => String(v || '').trim());
@@ -199,7 +248,10 @@ function fillWarrantyStatus_(sheet, claimsMeta) {
     if (!nmId) continue;
 
     const cacheKey = `warrantyM:${nmId}`;
-    if (cached.hasOwnProperty(cacheKey)) continue;
+    const r = propCacheGetFromAll_(cached, cacheKey, CACHE_TTL.WARRANTY_MS, nowMs);
+    if (r.needsTouch) touchTs.push(cacheKey);
+    const cachedValue = (r.exists && r.fresh) ? String(r.value || '') : '';
+    if (cachedValue) continue;
 
     if (!needSet.has(nmId)) {
       needSet.add(nmId);
@@ -211,8 +263,11 @@ function fillWarrantyStatus_(sheet, claimsMeta) {
     const nmId = needNm[i];
     const mini = getCardMiniByNmId_(nmId);
     const months = mini ? mini.warrantyMonths : null;
-    props.setProperty(`warrantyM:${nmId}`, (months && months > 0) ? String(months) : 'NA');
+    propCacheSet_(props, `warrantyM:${nmId}`, (months && months > 0) ? String(months) : PROP_CACHE_NA, nowMs);
   }
+
+  // миграция старого кэша (без ts): считаем «свежим», но проставляем ts
+  try { propCacheTouchTs_(props, touchTs, nowMs); } catch (e) {}
 
   const cachedAfter = props.getProperties();
 
@@ -238,8 +293,10 @@ function fillWarrantyStatus_(sheet, claimsMeta) {
     if (!claimDt) continue;
 
     const key = `warrantyM:${nmId}`;
-    const v = cachedAfter[key];
-    if (!v || v === 'NA') continue;
+    const r = propCacheGetFromAll_(cachedAfter, key, CACHE_TTL.WARRANTY_MS, nowMs);
+    if (r.needsTouch) touchTs.push(key);
+    const v = (r.exists && r.fresh) ? String(r.value || '') : '';
+    if (!v || v === PROP_CACHE_NA) continue;
 
     const months = Number(v);
     if (!isFinite(months) || months <= 0) continue;
@@ -255,6 +312,8 @@ function fillWarrantyStatus_(sheet, claimsMeta) {
 
   sheet.getRange(2, COL.WARRANTY, rows, 1).setValues(out);
   try { sheet.getRange(2, COL.WARRANTY, rows, 1).setNumberFormat('@'); } catch (e) {}
+
+  try { propCacheTouchTs_(props, touchTs, nowMs); } catch (e) {}
 }
 
 function addMonths_(date, months) {

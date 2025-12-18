@@ -23,6 +23,23 @@
 const ENABLE_TOASTS = true;
 const AUTO_CLEAR_CACHE_AFTER_LOAD = false;
 
+// ✅ TTL кэшей в Script Properties (чтобы данные не устаревали навсегда)
+const CACHE_TTL = {
+  BRAND_MS:          7  * 24 * 3600 * 1000,   // brand:<nmId>
+  RULE_MS:           7  * 24 * 3600 * 1000,   // rule:<nmId>
+  WARRANTY_MS:       30 * 24 * 3600 * 1000,   // warrantyM:<nmId>
+  CLAIMFB_FOUND_MS:  30 * 24 * 3600 * 1000,   // claimfb:<claimId> (⭐N)
+  CLAIMFB_MISS_MS:   12 * 3600 * 1000         // claimfb:<claimId> (не найдено)
+};
+
+// ✅ Поиск отзывов (строгий + fallback)
+const FEEDBACK_WINDOW_DAYS_BEFORE_ORDER = 1;          // order_dt - N дней
+const FEEDBACK_WINDOW_DAYS_AFTER_CLAIM_STRICT = 1;    // claim_dt + N дней (строго)
+const FEEDBACK_WINDOW_DAYS_AFTER_CLAIM_FALLBACK = 7;  // claim_dt + N дней (fallback)
+
+const FEEDBACK_STRICT_MINUTES = 120;
+const FEEDBACK_FALLBACK_MINUTES = 24 * 60;
+
 // ✅ Дедлайн: +N дней, выставить время 09:00
 const DEADLINE_ADD_DAYS = 4;
 const DEADLINE_SET_HOUR = 9;
@@ -34,6 +51,7 @@ const SHEET_NAME = 'Возвраты в работе';
 const BRANDS_SHEET_NAME = 'Бренды';
 const CATEGORIES_SHEET_NAME = 'Категории';
 const MESSAGES_SHEET_NAME = 'Сообщения';
+
 
 /**********************
  * Решения (фиксированный список)
