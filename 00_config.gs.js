@@ -100,20 +100,21 @@ const RUNTIME = {
  * ЛИСТЫ / КОЛОНКИ
  **********************/
 const HEADERS_MAIN = [
-  'Дата создания',   // A
-  'Бренд',           // B
-  'NM ID',           // C
-  'Оценка',          // D
-  'Кол-во',          // E
-  'Возврат',         // F
-  'Отзыв',           // G
-  'Покупка (дней)',  // H
-  'Гарантия',        // I
-  'Дедлайн',         // J
-  'ID заявки',       // K  ✅ перенесли после дедлайна
-  'Решение',         // L
-  'Сообщение',       // M
-  '_foreignBrand'    // N
+  'Создано',        // A  (было: Дата создания)
+  'Бренд',          // B
+  'Артикул',        // C  (было: NM ID)
+  'Оценка',         // D
+  'Кол-во',         // E
+  'Тип возврата',   // F  (было: Возврат)
+  'Отзыв',          // G
+  'Давность',       // H  (было: Покупка (дней))
+  'Гарантия',       // I
+  'ID заявки',      // J
+  'Причина',        // K
+  'Решение',        // L
+  'Сообщение',      // M
+  'Дедлайн',        // N
+  '_foreignBrand'   // O (скрыт)
 ];
 
 function _colIndex_(headerName) {
@@ -122,20 +123,21 @@ function _colIndex_(headerName) {
   return i + 1; // 1-based
 }
 
-// ✅ COL всегда синхронизирован с HEADERS_MAIN (перестановки больше не ломают форматирование)
+// ✅ COL всегда синхронизирован с HEADERS_MAIN
 const COL = {
-  DT:            _colIndex_('Дата создания'),
+  DT:            _colIndex_('Создано'),
   BRAND:         _colIndex_('Бренд'),
-  NM_ID:         _colIndex_('NM ID'),
+  NM_ID:         _colIndex_('Артикул'),
   RATING:        _colIndex_('Оценка'),
   RATING_COUNT:  _colIndex_('Кол-во'),
-  RETURN_RULE:   _colIndex_('Возврат'),
+  RETURN_RULE:   _colIndex_('Тип возврата'),
   RETURN_FB:     _colIndex_('Отзыв'),
-  PURCHASE_DAYS: _colIndex_('Покупка (дней)'),
+  PURCHASE_DAYS: _colIndex_('Давность'),
   WARRANTY:      _colIndex_('Гарантия'),
-  DEADLINE:      _colIndex_('Дедлайн'),
   CLAIM_ID:      _colIndex_('ID заявки'),
+  REASON:        _colIndex_('Причина'),
   DECISION:      _colIndex_('Решение'),
   MESSAGE:       _colIndex_('Сообщение'),
+  DEADLINE:      _colIndex_('Дедлайн'),
   FOREIGN_BRAND: _colIndex_('_foreignBrand')
 };

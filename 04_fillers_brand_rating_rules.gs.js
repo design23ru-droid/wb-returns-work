@@ -81,7 +81,7 @@ function fillForeignBrandFlags_(sheet) {
   }
 
   const last = brandsSheet.getLastRow();
-  const list = (last >= 1) ? brandsSheet.getRange(1, 1, last, 1).getValues().flat() : [];
+  const list = (last >= 2) ? brandsSheet.getRange(2, 1, last - 1, 1).getValues().flat() : [];
   const allowed = new Set(list.map(v => String(v || '').trim()).filter(Boolean));
 
   const dataLastRow = getDataLastRow_(sheet);
@@ -99,6 +99,7 @@ function fillForeignBrandFlags_(sheet) {
   sheet.getRange(2, COL.FOREIGN_BRAND, rows, 1).setValues(out);
   try { sheet.hideColumns(COL.FOREIGN_BRAND); } catch (e) {}
 }
+
 
 
 /**********************

@@ -168,7 +168,7 @@ function getTokenCached_(key) {
   if (!v) {
     throw new Error(
       `Не найден токен в Script Properties: ${unifiedKey}\n` +
-      `Открой меню "WB · Возвраты" → "Настроить токен (1 раз)".`
+      `Открой меню "WB · Возвраты" → "Администрирование" → "Токены".`
     );
   }
 

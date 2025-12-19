@@ -279,10 +279,21 @@ function migrateReturnsSheetSchema_() {
       if (f) f.remove();
     } catch (e) {}
 
-    // 4) Миграция данных под текущие HEADERS_MAIN (перестановка/добавление колонок без потери данных)
-    //    Важно: allowRebuild=true — это “осознанная” миграция по кнопке
+    // 4) ЖЁСТКАЯ миграция: пересборка по заголовкам + нормализация лейаута
     try {
+      if (typeof rebuildSheetByHeaders_ !== 'function') {
+        throw new Error('rebuildSheetByHeaders_ is not defined (проверь 02_layout.gs.js)');
+      }
+
+      const lastCol = Math.max(sh.getLastColumn(), HEADERS_MAIN.length);
+      rebuildSheetByHeaders_(sh, lastCol);
+
       ensureSheetLayout_(sh, { allowRebuild: true });
+
+      // Если ранее "Сообщение" уехало в "_foreignBrand" — попробуем аккуратно вернуть
+      if (typeof repairMessageMovedToForeignBrand_ === 'function') {
+        repairMessageMovedToForeignBrand_(sh);
+      }
     } catch (e) {
       clearToast_(ss);
       ui.alert('WB · Возвраты', `Ошибка миграции структуры:\n${e}`, ui.ButtonSet.OK);
@@ -294,8 +305,7 @@ function migrateReturnsSheetSchema_() {
       if (!sh.getFilter()) sh.getRange(1, 1, 1, HEADERS_MAIN.length).createFilter();
     } catch (e) {}
 
-    // 6) Важно: условное форматирование должно быть пересобрано,
-    //    иначе “правила” остаются привязанными к старым индексам колонок
+    // 6) Важно: условное форматирование и валидации пересобираем под новые индексы колонок
     try { applyDecisionDropdown_(sh); } catch (e) {}
     try { applyConditionalRules_(sh); } catch (e) {}
     try { autoSortByDate_(sh); } catch (e) {}
@@ -311,3 +321,4 @@ function migrateReturnsSheetSchema_() {
     );
   });
 }
+
