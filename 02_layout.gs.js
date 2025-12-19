@@ -234,23 +234,6 @@ function getDataLastRow_(sheet) {
 }
 
 /**********************
- * СЕРВИС
- **********************/
-function getOrCreateSheet_(name) {
-  const ss = SpreadsheetApp.getActive();
-  const sh = ss.getSheetByName(name) || ss.insertSheet(name);
-  ensureSheetLayout_(sh);
-  return sh;
-}
-
-function safeParseDate_(s) {
-  if (!s) return null;
-  const d = (s instanceof Date) ? s : new Date(s);
-  return isNaN(d.getTime()) ? null : d;
-}
-
-
-/**********************
  * Последняя строка данных
  **********************/
 function getDataLastRowByColumn_(sheet, colIdx) {
@@ -268,6 +251,7 @@ function getDataLastRow_(sheet) {
   return getDataLastRowByColumn_(sheet, COL.CLAIM_ID);
 }
 
+
 /**********************
  * СЕРВИС
  **********************/
@@ -283,6 +267,7 @@ function safeParseDate_(s) {
   const d = (s instanceof Date) ? s : new Date(s);
   return isNaN(d.getTime()) ? null : d;
 }
+
 
 /**********************
  * Автосортировка по дате создания (A)

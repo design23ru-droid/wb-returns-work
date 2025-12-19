@@ -98,15 +98,30 @@ function getCardMiniByNmId_(nmId) {
   throttle_('content');
 
   const url = 'https://content-api.wildberries.ru/content/v2/get/cards/list';
+
+  // Берём пачку результатов и выбираем строгое совпадение по nmID,
+  // чтобы textSearch не вернул "похожую" карточку.
   const payload = {
     settings: {
-      filter: { textSearch: String(key), withPhoto: -1 },
-      cursor: { limit: 1 }
+      filter: { textSearch: key, withPhoto: -1 },
+      cursor: { limit: 100 }
     }
   };
 
   const resp = fetchJsonPostWithRetryNonThrow_(url, getTokenCached_(TOKEN_KEYS.CONTENT), payload);
-  const card = resp?.cards?.[0] || null;
+  const cards = resp?.cards || [];
+
+  let card = null;
+  if (Array.isArray(cards) && cards.length) {
+    for (let i = 0; i < cards.length; i++) {
+      const c = cards[i];
+      const cNm = (c && (c.nmID ?? c.nmId)) || '';
+      if (String(cNm).trim() === key) {
+        card = c;
+        break;
+      }
+    }
+  }
 
   let warrantyText = '';
   let warrantyMonths = null;
@@ -138,10 +153,15 @@ function getCardMiniByNmId_(nmId) {
 
 function normalizeReturnRule_(text) {
   const t = String(text || '').toLowerCase();
+
   if (t.includes('заяв')) return 'Заявка';
-  if (t.includes('14')) return '14 дней';
+
+  // 14 как отдельное число (не 214/140), но допускаем "14д", "14 дней", "14дн" и т.п.
+  if (/(^|[^\d])14([^\d]|$)/.test(t)) return '14 дней';
+
   return '';
 }
+
 
 /**********************
  * HTTP helpers (retry)
