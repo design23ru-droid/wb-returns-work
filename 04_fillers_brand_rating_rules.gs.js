@@ -40,9 +40,18 @@ function fillBrands_(sheet) {
 
   for (let i = 0; i < need.length; i++) {
     const nmId = need[i];
+
     const mini = getCardMiniByNmId_(nmId);
-    const brand = (mini && String(mini.brand || '').trim()) ? String(mini.brand).trim() : 'Без бренда';
-    propCacheSet_(props, `brand:${nmId}`, brand, nowMs);
+
+    // Если карточка не найдена/не совпала по nmID — кешируем NA (а не "Без бренда")
+    let toStore = PROP_CACHE_NA;
+
+    if (mini) {
+      const b = String(mini.brand || '').trim();
+      toStore = b ? b : 'Без бренда';
+    }
+
+    propCacheSet_(props, `brand:${nmId}`, toStore, nowMs);
   }
 
   // миграция старого кэша (без ts): считаем «свежим», но проставляем ts
@@ -61,13 +70,18 @@ function fillBrands_(sheet) {
     const ck = `brand:${nmId}`;
     const cached = propCacheGetFromAll_(allAfter, ck, CACHE_TTL.BRAND_MS, nowMs);
     if (cached.needsTouch) touchTs.push(ck);
-    out[i] = [(cached.fresh ? cached.value : '') || current || ''];
+
+    const vRaw = (cached.exists && cached.fresh) ? String(cached.value || '') : '';
+    const v = (vRaw === PROP_CACHE_NA) ? '' : vRaw;
+
+    out[i] = [v || current || ''];
   }
 
   try { propCacheTouchTs_(props, touchTs, nowMs); } catch (e) {}
 
   sheet.getRange(2, COL.BRAND, rows, 1).setValues(out);
 }
+
 
 
 /**********************
@@ -81,7 +95,7 @@ function fillForeignBrandFlags_(sheet) {
   }
 
   const last = brandsSheet.getLastRow();
-  const list = (last >= 1) ? brandsSheet.getRange(1, 1, last, 1).getValues().flat() : [];
+  const list = (last >= 2) ? brandsSheet.getRange(2, 1, last - 1, 1).getValues().flat() : [];
   const allowed = new Set(list.map(v => String(v || '').trim()).filter(Boolean));
 
   const dataLastRow = getDataLastRow_(sheet);
@@ -99,6 +113,7 @@ function fillForeignBrandFlags_(sheet) {
   sheet.getRange(2, COL.FOREIGN_BRAND, rows, 1).setValues(out);
   try { sheet.hideColumns(COL.FOREIGN_BRAND); } catch (e) {}
 }
+
 
 
 /**********************
